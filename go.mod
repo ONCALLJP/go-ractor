@@ -1,3 +1,3 @@
-module github.com/oncall/goractor
+module github.com/ONCALLJP/goractor
 
 go 1.22.0
