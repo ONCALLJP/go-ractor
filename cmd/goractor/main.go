@@ -642,13 +642,6 @@ func disableTask(taskName string) error {
 	return nil
 }
 
-// func showTaskStatus(name string) error {
-// 	cmd := exec.Command("systemctl", "status", fmt.Sprintf("goractor-%s.timer", name))
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stderr = os.Stderr
-// 	return cmd.Run()
-// }
-
 func showAllTaskStatus() error {
 	cmd := exec.Command("systemctl", "list-timers", "goractor-*")
 	cmd.Stdout = os.Stdout
