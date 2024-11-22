@@ -445,9 +445,6 @@ func installTask(name string) error {
 	}
 
 	fmt.Printf("Generated systemd service files for task %s\n", name)
-	fmt.Println("To enable and start the task, run:")
-	fmt.Printf("  sudo systemctl enable goractor-%s.timer\n", name)
-	fmt.Printf("  sudo systemctl start goractor-%s.timer\n", name)
 
 	return nil
 }
