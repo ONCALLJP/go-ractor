@@ -16,8 +16,9 @@ func NewPrompt() *Prompt {
 func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, error) {
 	// Database name
 	namePrompt := promptui.Prompt{
-		Label:    "Database Name",
-		Validate: validateNotEmpty,
+		Label:     "Database Name",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
 	}
 	name, err := namePrompt.Run()
 	if err != nil {
@@ -29,9 +30,10 @@ func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, err
 		defaultHost = defaultConfig.Host
 	}
 	hostPrompt := promptui.Prompt{
-		Label:    "Host",
-		Validate: validateNotEmpty,
-		Default:  defaultHost,
+		Label:     "Host",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defaultHost,
 	}
 	host, err := hostPrompt.Run()
 	if err != nil {
@@ -43,9 +45,10 @@ func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, err
 		defaultPort = fmt.Sprintf("%d", defaultConfig.Port)
 	}
 	portPrompt := promptui.Prompt{
-		Label:    "Port",
-		Validate: validatePort,
-		Default:  defaultPort,
+		Label:     "Port",
+		Validate:  validatePort,
+		AllowEdit: true,
+		Default:   defaultPort,
 	}
 	portStr, err := portPrompt.Run()
 	if err != nil {
@@ -58,9 +61,10 @@ func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, err
 		defaultUser = defaultConfig.User
 	}
 	userPrompt := promptui.Prompt{
-		Label:    "User",
-		Validate: validateNotEmpty,
-		Default:  defaultUser,
+		Label:     "User",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defaultUser,
 	}
 	user, err := userPrompt.Run()
 	if err != nil {
@@ -72,10 +76,11 @@ func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, err
 		defaultPass = defaultConfig.Password
 	}
 	passPrompt := promptui.Prompt{
-		Label:    "Password",
-		Mask:     '*',
-		Validate: validateNotEmpty,
-		Default:  defaultPass,
+		Label:     "Password",
+		Mask:      '*',
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defaultPass,
 	}
 	pass, err := passPrompt.Run()
 	if err != nil {
@@ -87,9 +92,10 @@ func (p *Prompt) PromptDatabase(defaultConfig *DBConfig) (string, *DBConfig, err
 		defaultDBName = defaultConfig.DBName
 	}
 	dbNamePrompt := promptui.Prompt{
-		Label:    "Database Name",
-		Validate: validateNotEmpty,
-		Default:  defaultDBName,
+		Label:     "Database Name",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defaultDBName,
 	}
 	dbName, err := dbNamePrompt.Run()
 	if err != nil {

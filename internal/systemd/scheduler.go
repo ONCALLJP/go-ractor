@@ -1,4 +1,4 @@
-package scheduler
+package systemd
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/ONCALLJP/goractor/internal/task"
 )
 
-type Scheduler struct {
+type Systemd struct {
 	tasks    *task.Manager
 	executor *executor.Executor
 	runners  map[string]*TaskRunner
@@ -23,19 +23,19 @@ type TaskRunner struct {
 	interval time.Duration
 }
 
-func NewScheduler(tasks *task.Manager, executor *executor.Executor) *Scheduler {
-	return &Scheduler{
+func NewSystemd(tasks *task.Manager, executor *executor.Executor) *Systemd {
+	return &Systemd{
 		tasks:    tasks,
 		executor: executor,
 		runners:  make(map[string]*TaskRunner),
 	}
 }
 
-func (s *Scheduler) GetExecutor() *executor.Executor {
+func (s *Systemd) GetExecutor() *executor.Executor {
 	return s.executor
 }
 
-func (s *Scheduler) Start() error {
+func (s *Systemd) Start() error {
 	tasks := s.tasks.List()
 	for _, t := range tasks {
 		if err := s.StartTask(&t); err != nil {
@@ -45,7 +45,7 @@ func (s *Scheduler) Start() error {
 	return nil
 }
 
-func (s *Scheduler) StartTask(t *task.Task) error {
+func (s *Systemd) StartTask(t *task.Task) error {
 	interval, err := parseSchedule(t.Schedule)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func (s *Scheduler) StartTask(t *task.Task) error {
 	return nil
 }
 
-func (s *Scheduler) StopTask(taskName string) {
+func (s *Systemd) StopTask(taskName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -81,7 +81,7 @@ func (s *Scheduler) StopTask(taskName string) {
 	}
 }
 
-func (s *Scheduler) Stop() {
+func (s *Systemd) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -91,7 +91,7 @@ func (s *Scheduler) Stop() {
 	s.runners = make(map[string]*TaskRunner)
 }
 
-func (s *Scheduler) runTask(ctx context.Context, runner *TaskRunner) {
+func (s *Systemd) runTask(ctx context.Context, runner *TaskRunner) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 

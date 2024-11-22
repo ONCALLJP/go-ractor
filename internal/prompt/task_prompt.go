@@ -2,17 +2,26 @@ package prompt
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ONCALLJP/goractor/internal/config"
+	"github.com/ONCALLJP/goractor/internal/destination"
 	"github.com/ONCALLJP/goractor/internal/task"
 	"github.com/manifoldco/promptui"
 )
 
-type TaskPrompt struct{}
+type TaskPrompt struct {
+	DestinationManager *destination.Manager
+	ConfigManger       *config.Manager
+}
 
-func NewTaskPrompt() *TaskPrompt {
-	return &TaskPrompt{}
+func NewTaskPrompt(destinationManager *destination.Manager, configManager *config.Manager) *TaskPrompt {
+	return &TaskPrompt{DestinationManager: destinationManager, ConfigManger: configManager}
 }
 
 func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, error) {
@@ -23,9 +32,10 @@ func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, erro
 	}
 	var name string
 	namePrompt := promptui.Prompt{
-		Label:    "Task Name",
-		Default:  defaultName,
-		Validate: validateNotEmpty,
+		Label:     "Task Name",
+		Default:   defaultName,
+		AllowEdit: true,
+		Validate:  validateNotEmpty,
 	}
 	var err error
 	name, err = namePrompt.Run()
@@ -34,63 +44,42 @@ func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, erro
 	}
 
 	// Database
-	defaultDB := ""
-	if defaultValues != nil {
-		defaultDB = defaultValues.Database
+	dbs := p.ConfigManger.ListDatabases()
+	if len(dbs) == 0 {
+		return nil, fmt.Errorf("no configration found. Please add a database config first")
 	}
-	dbPrompt := promptui.Prompt{
-		Label:    "Database Name",
-		Validate: validateNotEmpty,
-		Default:  defaultDB,
+	databases := make([]string, 0)
+	for _, db := range dbs {
+		databases = append(databases, db.DBName)
 	}
-	database, err := dbPrompt.Run()
+
+	dbPrompt := promptui.Select{
+		Label: "Database Config Name",
+		Items: databases,
+	}
+	_, database, err := dbPrompt.Run()
 	if err != nil {
 		return nil, fmt.Errorf("database prompt failed: %w", err)
 	}
 
 	// Schedule
-	schedulePrompt := promptui.Select{
-		Label: "Schedule Type",
-		Items: []string{"hourly", "daily", "custom"},
-	}
-	_, scheduleType, err := schedulePrompt.Run()
+
+	schedule, err := p.promptSchedule()
 	if err != nil {
-		return nil, fmt.Errorf("schedule type prompt failed: %w", err)
+		return nil, err
 	}
 
-	var schedule string
-	switch scheduleType {
-	case "hourly":
-		schedule = "every 1h"
-	case "daily":
-		defaultTime := "15:00"
-		if defaultValues != nil && strings.HasPrefix(defaultValues.Schedule, "daily ") {
-			defaultTime = strings.TrimPrefix(defaultValues.Schedule, "daily ")
-		}
-		timePrompt := promptui.Prompt{
-			Label:    "Time (HH:MM)",
-			Validate: validateTime,
-			Default:  defaultTime,
-		}
-		time, err := timePrompt.Run()
-		if err != nil {
-			return nil, fmt.Errorf("time prompt failed: %w", err)
-		}
-		schedule = fmt.Sprintf("daily %s", time)
-	case "custom":
-		defaultSchedule := ""
-		if defaultValues != nil {
-			defaultSchedule = defaultValues.Schedule
-		}
-		customPrompt := promptui.Prompt{
-			Label:    "Custom Schedule (e.g., every 30m, every 2h)",
-			Validate: validateSchedule,
-			Default:  defaultSchedule,
-		}
-		schedule, err = customPrompt.Run()
-		if err != nil {
-			return nil, fmt.Errorf("custom schedule prompt failed: %w", err)
-		}
+	var timezone string
+	zones := getAvailableTimezones()
+
+	// Timezone prompt
+	tzPrompt := promptui.Select{
+		Label: "Timezone",
+		Items: zones,
+	}
+	_, timezone, err = tzPrompt.Run()
+	if err != nil {
+		return nil, fmt.Errorf("timezone prompt failed: %w", err)
 	}
 
 	// Query
@@ -99,155 +88,264 @@ func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, erro
 		return nil, err
 	}
 
-	// Destination
-	destination, err := p.promptDestination(defaultValues)
+	// Message
+	var defualtMessage string
+	if defaultValues != nil {
+		defualtMessage = defaultValues.Message
+	}
+	messagePrompt := promptui.Prompt{
+		Label:     "Message",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defualtMessage,
+	}
+	message, err := messagePrompt.Run()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query name prompt failed: %w", err)
 	}
 
 	// Output Format
 	formatPrompt := promptui.Select{
 		Label: "Output Format",
-		Items: []string{"json", "csv"},
+		Items: []string{"csv"}, // TODO add more formats
 	}
 	_, outputFormat, err := formatPrompt.Run()
 	if err != nil {
 		return nil, fmt.Errorf("output format prompt failed: %w", err)
 	}
 
+	// Destination
+	destinations := p.DestinationManager.List()
+	if len(destinations) == 0 {
+		return nil, fmt.Errorf("no destinations configured. Please add a destination first")
+	}
+
+	// Destination selection
+	destPrompt := promptui.Select{
+		Label: "Select Destination",
+		Items: destinations,
+	}
+	_, destName, err := destPrompt.Run()
+	if err != nil {
+		return nil, fmt.Errorf("destination selection failed: %w", err)
+	}
+
 	return &task.Task{
-		Name:         name,
-		Database:     database,
-		Schedule:     schedule,
-		Query:        *query,
-		Destination:  *destination,
-		OutputFormat: outputFormat,
+		Name:            name,
+		Database:        database,
+		Schedule:        schedule,
+		Timezone:        timezone,
+		Query:           query,
+		Message:         message,
+		DestinationName: destName,
+		OutputFormat:    outputFormat,
 	}, nil
 }
 
-// Helper function to safely get default string value
-func getDefaultString(defaultValues *task.Task, value string) string {
-	if defaultValues == nil {
-		return ""
-	}
-	return value
-}
-
-func (p *TaskPrompt) promptQuery(defaultValues *task.Task) (*task.Query, error) {
-	var defaultName, defaultSQL string
-	if defaultValues != nil {
-		defaultName = defaultValues.Query.Name
-		defaultSQL = defaultValues.Query.SQL
-	}
-
-	// Query Name
-	namePrompt := promptui.Prompt{
-		Label:    "Query Name",
-		Validate: validateNotEmpty,
-		Default:  defaultName,
-	}
-	name, err := namePrompt.Run()
+func (p *TaskPrompt) promptQuery(defaultValues *task.Task) (string, error) {
+	// Create temporary file
+	tmpfile, err := ioutil.TempFile("", "goractor-sql-*.sql")
 	if err != nil {
-		return nil, fmt.Errorf("query name prompt failed: %w", err)
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
+	defer os.Remove(tmpfile.Name())
 
-	// SQL
-	sqlPrompt := promptui.Prompt{
-		Label:    "SQL (SELECT only)",
-		Validate: validateSelectSQL,
-		Default:  defaultSQL,
-	}
-	sql, err := sqlPrompt.Run()
-	if err != nil {
-		return nil, fmt.Errorf("SQL prompt failed: %w", err)
-	}
-
-	return &task.Query{
-		Name: name,
-		SQL:  sql,
-	}, nil
-}
-
-func (p *TaskPrompt) promptDestination(defaultValues *task.Task) (*task.Destination, error) {
-	var destination task.Destination
-
-	// Always ask for URL
-	defaultURL := ""
-	if defaultValues != nil {
-		defaultURL = defaultValues.Destination.WebhookURL
-	}
-
-	// URL prompt
-	urlPrompt := promptui.Prompt{
-		Label:    "Destination URL",
-		Validate: validateURL,
-		Default:  defaultURL,
-	}
-	url, err := urlPrompt.Run()
-	if err != nil {
-		return nil, fmt.Errorf("URL prompt failed: %w", err)
-	}
-	destination.WebhookURL = url
-
-	// Channel name if URL contains "slack"
-	if strings.Contains(strings.ToLower(url), "slack") {
-		defaultChannel := ""
-		if defaultValues != nil {
-			defaultChannel = defaultValues.Destination.Channel
-		}
-		channelPrompt := promptui.Prompt{
-			Label:    "Slack Channel",
-			Validate: validateNotEmpty,
-			Default:  defaultChannel,
-		}
-		channel, err := channelPrompt.Run()
-		if err != nil {
-			return nil, fmt.Errorf("channel prompt failed: %w", err)
-		}
-		destination.Channel = channel
-	}
-
-	// Auth Type
-	authTypePrompt := promptui.Select{
-		Label: "Authentication Type",
-		Items: []string{"bearer", "basic", "api_key", "none"},
-	}
-	_, authType, err := authTypePrompt.Run()
-	if err != nil {
-		return nil, fmt.Errorf("auth type prompt failed: %w", err)
-	}
-
-	if authType != "none" {
-		defaultTokenValue := ""
-		if defaultValues != nil {
-			defaultTokenValue = defaultValues.Destination.Token.Value
-		}
-
-		// Token Value
-		tokenPrompt := promptui.Prompt{
-			Label:    fmt.Sprintf("%s Token", authType),
-			Mask:     '*', // Hide token input
-			Validate: validateNotEmpty,
-			Default:  defaultTokenValue,
-		}
-		tokenValue, err := tokenPrompt.Run()
-		if err != nil {
-			return nil, fmt.Errorf("token prompt failed: %w", err)
-		}
-
-		destination.Token = task.TokenConfig{
-			Type:  authType,
-			Value: tokenValue,
+	// Write default SQL if exists
+	if defaultValues != nil && defaultValues.Query != "" {
+		if _, err := tmpfile.WriteString(defaultValues.Query); err != nil {
+			return "", fmt.Errorf("failed to write default SQL: %w", err)
 		}
 	} else {
-		destination.Token = task.TokenConfig{
-			Type:  "none",
-			Value: "",
+		// Write template/instructions
+		template := `-- Enter your SQL query here (query must start with WITH, SELECT, EXPLAIN, or be a subquery)
+-- Example:
+-- SELECT column1, column2
+-- FROM table_name
+-- WHERE condition
+-- GROUP BY column1
+-- HAVING condition
+-- ORDER BY column1;
+
+`
+		if _, err := tmpfile.WriteString(template); err != nil {
+			return "", fmt.Errorf("failed to write SQL template: %w", err)
+		}
+	}
+	tmpfile.Close()
+
+	// Get editor from environment or default to nano
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nano"
+	}
+
+	// Open editor
+	cmd := exec.Command(editor, tmpfile.Name())
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Printf("Opening %s to edit SQL query...\n", editor)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run editor: %w", err)
+	}
+
+	// Read the edited content
+	content, err := ioutil.ReadFile(tmpfile.Name())
+	if err != nil {
+		return "", fmt.Errorf("failed to read SQL from file: %w", err)
+	}
+
+	sql := string(content)
+
+	// Validate SQL
+	if err := validateSQL(sql); err != nil {
+		return "", err
+	}
+
+	return sql, nil
+}
+
+func validateSQL(sql string) error {
+	// Remove comments and merge lines
+	lines := strings.Split(sql, "\n")
+	var validLines []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "--") {
+			validLines = append(validLines, line)
+		}
+	}
+	sql = strings.Join(validLines, " ")
+	sql = strings.TrimSpace(sql)
+
+	if sql == "" {
+		return fmt.Errorf("SQL query cannot be empty")
+	}
+
+	// Basic validation - query should eventually have a SELECT
+	sqlLower := strings.ToLower(sql)
+	if !strings.Contains(sqlLower, "select") {
+		return fmt.Errorf("query must contain at least one SELECT statement")
+	}
+
+	// Allow common SQL constructs
+	validStartPatterns := []string{
+		"with",
+		"select",
+		"(",
+		"explain",
+		"analyze",
+		"explain analyze",
+		"explain (analyze)",
+		"explain (analyze, buffers)",
+	}
+
+	// Check if query starts with any valid pattern
+	isValidStart := false
+	for _, pattern := range validStartPatterns {
+		if strings.HasPrefix(sqlLower, pattern) {
+			isValidStart = true
+			break
 		}
 	}
 
-	destination.Type = "api"
-	return &destination, nil
+	if !isValidStart {
+		return fmt.Errorf("query must start with WITH, SELECT, EXPLAIN, or be a subquery")
+	}
+
+	return nil
+}
+func (p *TaskPrompt) promptSchedule() (string, error) {
+	schedulePrompt := promptui.Select{
+		Label: "Schedule Type",
+		Items: []string{"every_5min", "every_hour", "daily", "weekly", "monthly"},
+	}
+	_, scheduleType, err := schedulePrompt.Run()
+	if err != nil {
+		return "", fmt.Errorf("schedule type prompt failed: %w", err)
+	}
+
+	switch scheduleType {
+	case "every_5min", "every_hour":
+		return scheduleType, nil
+
+	case "daily":
+		timeStr, err := promptTime()
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("daily %s", timeStr), nil
+
+	case "weekly":
+		// Select days of week
+		daysPrompt := promptui.Select{
+			Label: "Days of Week",
+			Items: []string{
+				"Sunday",
+				"Monday",
+				"Tuesday",
+				"Wednesday",
+				"Thursday",
+				"Friday",
+				"Saturday",
+				"Monday-Friday",
+				"Saturday,Sunday",
+			},
+		}
+		_, days, err := daysPrompt.Run()
+		if err != nil {
+			return "", fmt.Errorf("days selection failed: %w", err)
+		}
+
+		timeStr, err := promptTime()
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("weekly %s %s", days, timeStr), nil
+
+	case "monthly":
+		// Day of month prompt
+		dayPrompt := promptui.Prompt{
+			Label:    "Day of Month (1-31)",
+			Validate: validateDayOfMonth,
+			Default:  "1",
+		}
+		day, err := dayPrompt.Run()
+		if err != nil {
+			return "", fmt.Errorf("day prompt failed: %w", err)
+		}
+
+		timeStr, err := promptTime()
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("monthly %s %s", day, timeStr), nil
+	}
+
+	return "", fmt.Errorf("invalid schedule type")
+}
+
+func promptTime() (string, error) {
+	timePrompt := promptui.Prompt{
+		Label:    "Time (HH:MM)",
+		Validate: validateTime,
+		Default:  "09:00",
+	}
+	return timePrompt.Run()
+}
+
+func validateDayOfMonth(input string) error {
+	day, err := strconv.Atoi(input)
+	if err != nil {
+		return fmt.Errorf("must be a number")
+	}
+	if day < 1 || day > 31 {
+		return fmt.Errorf("must be between 1 and 31")
+	}
+	return nil
 }
 
 func (p *TaskPrompt) CreateTask() (*task.Task, error) {
@@ -263,8 +361,10 @@ func (p *TaskPrompt) EditTask(t *task.Task) error {
 	// Copy back all values except the name
 	t.Database = updatedTask.Database
 	t.Schedule = updatedTask.Schedule
+	t.Timezone = updatedTask.Timezone
 	t.Query = updatedTask.Query
-	t.Destination = updatedTask.Destination
+	t.Message = updatedTask.Message
+	t.DestinationName = updatedTask.DestinationName
 	t.OutputFormat = updatedTask.OutputFormat
 
 	return nil
@@ -286,22 +386,22 @@ func validateSelectSQL(input string) error {
 	return nil
 }
 
-func validateURL(input string) error {
-	if !strings.HasPrefix(input, "https://") {
-		return fmt.Errorf("URL must start with https://")
-	}
-	return nil
-}
-
 func validateTime(input string) error {
 	_, err := time.Parse("15:04", input)
 	return err
 }
 
-func validateSchedule(input string) error {
-	// Basic validation for now
-	if !strings.HasPrefix(input, "every ") && !strings.HasPrefix(input, "daily ") {
-		return fmt.Errorf("schedule must start with 'every ' or 'daily '")
+func getAvailableTimezones() []string {
+	// Common timezones first
+	commonZones := []string{
+		"UTC",
+		"Asia/Tokyo",
+		"America/New_York",
+		"Europe/London",
+		"Asia/Singapore",
+		"Australia/Sydney",
+		// Add more as needed
 	}
-	return nil
+
+	return commonZones
 }
