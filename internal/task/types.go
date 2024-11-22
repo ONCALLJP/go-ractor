@@ -43,14 +43,15 @@ type TokenConfig struct {
 }
 
 type Task struct {
-	Name            string `yaml:"name"`
-	Database        string `yaml:"database"` // reference to database config
-	Schedule        string `yaml:"schedule"` // e.g., "every 1h", "daily 15:00"
-	Timezone        string `yaml:"timezone"` // e.g., "Asia/Tokyo"
-	Query           string `yaml:"query"`
-	Message         string `yaml:"message"`
-	DestinationName string `yaml:"destination"`
-	OutputFormat    string `yaml:"output_format"` // "json" or "csv"
+	Name            string   `yaml:"name"`
+	Database        string   `yaml:"database"` // reference to database config
+	Schedule        string   `yaml:"schedule"` // e.g., "every 1h", "daily 15:00"
+	Timezone        string   `yaml:"timezone"` // e.g., "Asia/Tokyo"
+	Query           string   `yaml:"query"`
+	Columns         []string `yaml:"columns"`
+	Message         string   `yaml:"message"`
+	DestinationName string   `yaml:"destination"`
+	OutputFormat    string   `yaml:"output_format"` // "json" or "csv"
 }
 
 func (t Task) String() string {

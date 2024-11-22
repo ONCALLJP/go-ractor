@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ONCALLJP/goractor/internal/config"
@@ -91,6 +92,8 @@ func rootCommand() error {
 		return handleSystemdCommand(os.Args[2:])
 	case "log":
 		return handleLogCommand(os.Args[2:])
+	case "debug":
+		return handleDebugCommand(os.Args[2:])
 	default:
 		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
@@ -275,7 +278,25 @@ func handleSystemdCommand(args []string) error {
 		if len(args) == 1 {
 			return showAllTaskStatus()
 		}
-		return showTaskStatus(args[1])
+		return showTaskStatus()
+
+	case "restart":
+		taskName := args[1]
+		restartScript := fmt.Sprintf(`
+				systemctl restart goractor-%[1]s.service
+				systemctl restart goractor-%[1]s.timer
+				exit
+		`, taskName)
+
+		cmd := exec.Command("sudo", "bash", "-c", restartScript)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to restart service: %w", err)
+		}
+
+		fmt.Printf("Successfully restarted service and timer for task %s\n", taskName)
+		return nil
 
 	default:
 		return fmt.Errorf("unknown systemd command: %s", args[0])
@@ -322,6 +343,132 @@ func handleLogCommand(args []string) error {
 	}
 }
 
+func handleDebugCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: goractor debug [task-name]")
+	}
+	taskName := args[0]
+
+	fmt.Printf("=== Debug Info for Task: %s ===\n\n", taskName)
+
+	// 1. Service File Content
+	fmt.Println("1. Service File (/etc/systemd/system/goractor-" + taskName + ".service):")
+	fmt.Println("----------------------------------------")
+	serviceCmd := exec.Command("cat", fmt.Sprintf("/etc/systemd/system/goractor-%s.service", taskName))
+	serviceContent, err := serviceCmd.Output()
+	if err != nil {
+		fmt.Printf("Error reading service file: %v\n", err)
+	} else {
+		fmt.Printf("%s\n", serviceContent)
+	}
+
+	// 2. Timer File Content
+	fmt.Println("\n2. Timer File (/etc/systemd/system/goractor-" + taskName + ".timer):")
+	fmt.Println("----------------------------------------")
+	timerCmd := exec.Command("cat", fmt.Sprintf("/etc/systemd/system/goractor-%s.timer", taskName))
+	timerContent, err := timerCmd.Output()
+	if err != nil {
+		fmt.Printf("Error reading timer file: %v\n", err)
+	} else {
+		fmt.Printf("%s\n", timerContent)
+	}
+
+	// 3. Service Status
+	fmt.Println("\n3. Service Status:")
+	fmt.Println("----------------------------------------")
+	serviceStatusCmd := exec.Command("systemctl", "status", fmt.Sprintf("goractor-%s.service", taskName))
+	serviceStatus, _ := serviceStatusCmd.Output()
+	fmt.Printf("%s\n", serviceStatus)
+
+	// 4. Timer Status
+	fmt.Println("\n4. Timer Status:")
+	fmt.Println("----------------------------------------")
+	timerStatusCmd := exec.Command("systemctl", "status", fmt.Sprintf("goractor-%s.timer", taskName))
+	timerStatus, _ := timerStatusCmd.Output()
+	fmt.Printf("%s\n", timerStatus)
+
+	// 5. Check if binary exists
+	fmt.Println("\n5. Binary Check:")
+	fmt.Println("----------------------------------------")
+	binaryPath := "/home/ubuntu/goractor/goractor"
+	if _, err := os.Stat(binaryPath); err != nil {
+		fmt.Printf("Binary not found at %s\n", binaryPath)
+	} else {
+		binInfo, err := os.Stat(binaryPath)
+		if err == nil {
+			fmt.Printf("Binary exists: %s (Size: %d bytes, Mode: %s)\n",
+				binaryPath, binInfo.Size(), binInfo.Mode())
+		}
+	}
+
+	// 6. Log Files
+	fmt.Println("\n6. Recent Logs:")
+	fmt.Println("----------------------------------------")
+	fmt.Println("Last 5 lines of error log:")
+	errorLogCmd := exec.Command("tail", "-n", "5", "/var/log/goractor.error.log")
+	errorLog, _ := errorLogCmd.Output()
+	fmt.Printf("%s\n", errorLog)
+
+	return nil
+}
+
+func showTaskStatus() error {
+	cmd := exec.Command("systemctl", "list-timers", "goractor-*")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get timer status: %w", err)
+	}
+
+	fmt.Println("Goractor Tasks Status:")
+	fmt.Println("=====================")
+
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, "goractor-") {
+			taskName := extractTaskName(line)
+			if strings.Contains(line, " - ") {
+				fmt.Printf("%s: INACTIVE\n", taskName)
+			} else {
+				nextRun := extractNextRun(line)
+				lastRun := extractLastRun(line)
+				fmt.Printf("%s: ACTIVE\n", taskName)
+				fmt.Printf("  Next Run: %s\n", nextRun)
+				fmt.Printf("  Last Run: %s\n", lastRun)
+			}
+		}
+	}
+
+	return nil
+}
+
+func extractTaskName(line string) string {
+	if idx := strings.Index(line, "goractor-"); idx != -1 {
+		name := line[idx:]
+		if spaceIdx := strings.Index(name, " "); spaceIdx != -1 {
+			name = name[:spaceIdx]
+		}
+		return strings.TrimPrefix(name, "goractor-")
+	}
+	return ""
+}
+
+func extractNextRun(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) >= 2 {
+		return fields[0] + " " + fields[1]
+	}
+	return "Unknown"
+}
+
+func extractLastRun(line string) string {
+	fields := strings.Fields(line)
+	for i, field := range fields {
+		if field == "ago" && i >= 3 {
+			return fields[i-3] + " " + fields[i-2]
+		}
+	}
+	return "Unknown"
+}
+
 func addDestination() error {
 	prompt := destination.NewPrompt()
 	name, dest, err := prompt.PromptDestination(nil)
@@ -348,16 +495,15 @@ func editDestination(name string) error {
 // Placeholder functions - we'll implement these next
 func listTasks() error {
 	tasks := taskManager.List()
+
 	if len(tasks) == 0 {
 		fmt.Println("No tasks configured")
 		return nil
 	}
 
 	fmt.Println("Tasks:")
-	fmt.Println("---")
 	for _, t := range tasks {
-		fmt.Println(t.String())
-		fmt.Println("---")
+		fmt.Printf("- %s\n", t.Name)
 	}
 	return nil
 }
@@ -496,12 +642,12 @@ func disableTask(taskName string) error {
 	return nil
 }
 
-func showTaskStatus(name string) error {
-	cmd := exec.Command("systemctl", "status", fmt.Sprintf("goractor-%s.timer", name))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// func showTaskStatus(name string) error {
+// 	cmd := exec.Command("systemctl", "status", fmt.Sprintf("goractor-%s.timer", name))
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+// 	return cmd.Run()
+// }
 
 func showAllTaskStatus() error {
 	cmd := exec.Command("systemctl", "list-timers", "goractor-*")

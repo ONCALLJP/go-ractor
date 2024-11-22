@@ -88,6 +88,12 @@ func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, erro
 		return nil, err
 	}
 
+	// Columns
+	columns, err := p.promptColumns(defaultValues)
+	if err != nil {
+		return nil, err
+	}
+
 	// Message
 	var defualtMessage string
 	if defaultValues != nil {
@@ -136,6 +142,7 @@ func (p *TaskPrompt) promptBasicInfo(defaultValues *task.Task) (*task.Task, erro
 		Schedule:        schedule,
 		Timezone:        timezone,
 		Query:           query,
+		Columns:         columns,
 		Message:         message,
 		DestinationName: destName,
 		OutputFormat:    outputFormat,
@@ -204,6 +211,36 @@ func (p *TaskPrompt) promptQuery(defaultValues *task.Task) (string, error) {
 	}
 
 	return sql, nil
+}
+
+func (p *TaskPrompt) promptColumns(defaultValues *task.Task) ([]string, error) {
+	// Extract columns from defaultValues.Columns if available
+	var defaultColumns string
+	if defaultValues != nil && defaultValues.Columns != nil {
+		defaultColumns = strings.Join(defaultValues.Columns, ", ")
+	}
+
+	columnPrompt := promptui.Prompt{
+		Label:     "Columns (comma separated)",
+		Validate:  validateNotEmpty,
+		AllowEdit: true,
+		Default:   defaultColumns,
+	}
+	columnsInput, err := columnPrompt.Run()
+	if err != nil {
+		return nil, fmt.Errorf("columns prompt failed: %w", err)
+	}
+
+	columns := strings.Split(columnsInput, ",")
+	trimmedColumns := make([]string, 0, len(columns))
+	for _, column := range columns {
+		trimmedColumn := strings.TrimSpace(column)
+		if trimmedColumn != "" {
+			trimmedColumns = append(trimmedColumns, trimmedColumn)
+		}
+	}
+
+	return trimmedColumns, nil
 }
 
 func validateSQL(sql string) error {
@@ -363,6 +400,7 @@ func (p *TaskPrompt) EditTask(t *task.Task) error {
 	t.Schedule = updatedTask.Schedule
 	t.Timezone = updatedTask.Timezone
 	t.Query = updatedTask.Query
+	t.Columns = updatedTask.Columns
 	t.Message = updatedTask.Message
 	t.DestinationName = updatedTask.DestinationName
 	t.OutputFormat = updatedTask.OutputFormat

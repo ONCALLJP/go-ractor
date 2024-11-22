@@ -133,10 +133,7 @@ func (e *Executor) Execute(ctx context.Context, t *task.Task) error {
 	return nil
 }
 
-func (e *Executor) createCSVFile(result QueryResult, sqlQuery string) (string, error) {
-	// Get column order from SQL
-	headers := extractColumnsFromSQL(sqlQuery)
-
+func (e *Executor) createCSVFile(result QueryResult, headers []string) (string, error) {
 	// If we couldn't parse SQL, fallback to the order from result
 	if len(headers) == 0 && len(result.Data) > 0 {
 		for col := range result.Data[0] {
@@ -183,6 +180,7 @@ func (e *Executor) createCSVFile(result QueryResult, sqlQuery string) (string, e
 
 	return filename, nil
 }
+
 func extractColumnsFromSQL(sql string) []string {
 	// Normalize SQL but preserve Japanese characters and AS clauses
 	sql = strings.TrimSpace(sql)
@@ -215,6 +213,8 @@ func extractColumnsFromSQL(sql string) []string {
 				if col != "" {
 					if alias := extractAlias(col); alias != "" {
 						columns = append(columns, alias)
+					} else {
+						columns = append(columns, extractColumnName(col))
 					}
 				}
 				lastComma = i + 1
@@ -229,6 +229,8 @@ func extractColumnsFromSQL(sql string) []string {
 			if col != "" {
 				if alias := extractAlias(col); alias != "" {
 					columns = append(columns, alias)
+				} else {
+					columns = append(columns, extractColumnName(col))
 				}
 			}
 			break
@@ -238,38 +240,30 @@ func extractColumnsFromSQL(sql string) []string {
 	return columns
 }
 
-func extractAlias(col string) string {
-	// Look for AS or as followed by the alias
-	upperCol := strings.ToUpper(col)
-	asIndex := strings.LastIndex(upperCol, " AS ")
-	if asIndex == -1 {
-		asIndex = strings.LastIndex(col, " as ")
+func extractAlias(column string) string {
+	column = strings.TrimSpace(column)
+	if strings.HasPrefix(column, "(") && strings.HasSuffix(column, ")") {
+		column = strings.TrimPrefix(column, "(")
+		column = strings.TrimSuffix(column, ")")
 	}
-
-	if asIndex != -1 {
-		alias := strings.TrimSpace(col[asIndex+4:])
-		// Remove any trailing parentheses
-		alias = strings.TrimRight(alias, ")")
-		return alias
+	parts := strings.Split(column, " as ")
+	if len(parts) > 1 {
+		return strings.TrimSpace(parts[len(parts)-1])
 	}
-
 	return ""
 }
 
-func getColumnName(col string) string {
-	col = strings.TrimSpace(col)
-
-	// Handle "AS" alias
-	if idx := strings.LastIndex(strings.ToLower(col), " as "); idx != -1 {
-		return strings.TrimSpace(col[idx+4:])
+func extractColumnName(column string) string {
+	column = strings.TrimSpace(column)
+	if strings.HasPrefix(column, "(") && strings.HasSuffix(column, ")") {
+		column = strings.TrimPrefix(column, "(")
+		column = strings.TrimSuffix(column, ")")
 	}
-
-	// Handle table.column notation
-	if idx := strings.LastIndex(col, "."); idx != -1 {
-		col = col[idx+1:]
+	if strings.Contains(column, ".") {
+		parts := strings.Split(column, ".")
+		return strings.TrimSpace(parts[len(parts)-1])
 	}
-
-	return strings.TrimSpace(col)
+	return column
 }
 
 func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result QueryResult) error {
@@ -280,7 +274,7 @@ func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result Que
 	}
 
 	// Create CSV file
-	csvFilePath, err := e.createCSVFile(result, t.Query)
+	csvFilePath, err := e.createCSVFile(result, t.Columns)
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
