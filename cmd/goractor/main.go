@@ -15,6 +15,7 @@ import (
 	"github.com/ONCALLJP/goractor/internal/prompt"
 	"github.com/ONCALLJP/goractor/internal/systemd"
 	"github.com/ONCALLJP/goractor/internal/task"
+	"github.com/manifoldco/promptui"
 	"gopkg.in/yaml.v3"
 )
 
@@ -69,6 +70,11 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		showHelp()
+		os.Exit(0)
+	}
+
 	if err := rootCommand(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -76,9 +82,9 @@ func main() {
 }
 
 func rootCommand() error {
-	// If no arguments provided, show help
-	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: goractor [task|config|destination|sheduler] [command]")
+	if len(os.Args) == 2 && os.Args[1] == "--help" {
+		showHelp()
+		return nil
 	}
 
 	switch os.Args[1] {
@@ -167,6 +173,12 @@ func handleConfigCommand(args []string) error {
 		return nil
 
 	case "add":
+		fmt.Println("\n⚠️  IMPORTANT SECURITY NOTICE:")
+		fmt.Println("- Configuration will contain sensitive information")
+		fmt.Println("- You are responsible for securing and backing up configurations")
+		if !confirmPrompt("Do you understand and accept these responsibilities?") {
+			return fmt.Errorf("configuration creation cancelled")
+		}
 		name, db, err := configPrompt.PromptDatabase(nil)
 		if err != nil {
 			return err
@@ -231,6 +243,12 @@ func handleDestinationCommand(args []string) error {
 		return nil
 
 	case "add":
+		fmt.Println("\n⚠️  IMPORTANT SECURITY NOTICE:")
+		fmt.Println("- Configuration will contain sensitive information")
+		fmt.Println("- You are responsible for securing and backing up configurations")
+		if !confirmPrompt("Do you understand and accept these responsibilities?") {
+			return fmt.Errorf("configuration creation cancelled")
+		}
 		return addDestination()
 
 	case "edit":
@@ -607,11 +625,6 @@ func enableTask(name string) error {
 }
 
 func disableTask(taskName string) error {
-	// Check sudo access early
-	// sudoCmd := exec.Command("sudo", "-v")
-	// if err := sudoCmd.Run(); err != nil {
-	// 	return fmt.Errorf("failed to verify sudo access: %w", err)
-	// }
 
 	disableScript := fmt.Sprintf(`
 			# Stop and disable timer
@@ -647,4 +660,80 @@ func showAllTaskStatus() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func confirmPrompt(message string) bool {
+	prompt := promptui.Prompt{
+		Label:     message,
+		IsConfirm: true,
+	}
+	result, err := prompt.Run()
+	if err != nil {
+		return false
+	}
+	return strings.ToLower(result) == "y"
+}
+
+func showHelp() {
+	help := `
+Goractor - PostgreSQL Task Scheduler
+
+What you can do:
+• Schedule PostgreSQL queries to run automatically
+• Send results to Slack or other API endpoints
+• Export query results as CSV
+• Manage multiple database connections
+• Monitor and debug task execution
+
+Usage:
+goractor [command] [subcommand] [arguments]
+
+Available Commands:
+config        Configure database connections
+	add          Add new database connection
+	list         Show configured databases
+	remove       Remove a database
+	show         Display database details
+
+destination   Set up where to send results
+	add          Add new destination (Slack/API)
+	list         Show configured destinations
+	remove       Remove a destination
+	show         Display destination details
+
+task          Manage scheduled tasks
+	add          Create new scheduled task
+	list         Show all tasks
+	remove       Remove a task
+	show         Display task details
+	run          Test task execution
+
+systemd       Control task scheduling
+	install      Set up task schedule
+	restart      Restart task execution
+	disable      Stop task execution
+	status       Check scheduler status
+
+debug         Troubleshoot task issues
+log           View or clear execution logs
+
+Common Examples:
+1. Set up a new scheduled task:
+	 goractor task add
+
+2. Test task before scheduling:
+	 goractor task run task1
+
+3. Start scheduling:
+	 goractor systemd install task1
+
+4. Check execution status:
+	 goractor systemd status
+
+5. View execution logs:
+	 goractor log show
+
+Use "goractor [command] --help" for detailed information about each command.
+`
+	fmt.Println(help)
 }
