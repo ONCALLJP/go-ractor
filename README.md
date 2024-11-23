@@ -311,5 +311,3 @@ goractor log show
 # Clean logs
 goractor log clean
 ```
-
-[Rest of README remains the same...]
