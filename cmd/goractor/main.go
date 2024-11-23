@@ -496,18 +496,40 @@ func addDestination() error {
 	return destinationManager.Add(name, dest)
 }
 
-func editDestination(name string) error {
-	dest, exists := destinationManager.Get(name)
+func editDestination(currentName string) error {
+	dest, exists := destinationManager.Get(currentName)
 	if !exists {
-		return fmt.Errorf("destination %s not found", name)
+		return fmt.Errorf("destination %s not found", currentName)
 	}
 
 	prompt := destination.NewPrompt()
-	_, updatedDest, err := prompt.PromptDestination(&dest)
+	newName, updatedDest, err := prompt.PromptDestination(&dest)
 	if err != nil {
 		return err
 	}
-	return destinationManager.Update(name, updatedDest)
+
+	// If name has changed
+	if newName != currentName {
+		// Remove old destination
+		if err := destinationManager.Remove(currentName); err != nil {
+			return fmt.Errorf("failed to remove old destination: %w", err)
+		}
+		// Add with new name
+		if err := destinationManager.Add(newName, updatedDest); err != nil {
+			// Try to restore old destination if adding new one fails
+			_ = destinationManager.Add(currentName, dest)
+			return fmt.Errorf("failed to add destination with new name: %w", err)
+		}
+		fmt.Printf("Destination renamed from %s to %s\n", currentName, newName)
+	} else {
+		// Just update if name hasn't changed
+		if err := destinationManager.Update(currentName, updatedDest); err != nil {
+			return fmt.Errorf("failed to update destination: %w", err)
+		}
+	}
+
+	fmt.Printf("Successfully updated destination %s\n", newName)
+	return nil
 }
 
 // Placeholder functions - we'll implement these next

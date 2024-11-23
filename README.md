@@ -20,6 +20,12 @@ A robust PostgreSQL scheduling task manager that helps you automate SQL queries 
 - PostgreSQL
 - Systemd (for Linux scheduling)
 
+### Environment Setup
+For bash (add to `~/.bashrc` or `~/.bash_profile`):
+```bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
 ### Install from source
 ```bash
 git clone https://github.com/ONCALLJP/goractor.git
