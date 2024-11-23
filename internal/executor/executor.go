@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/ONCALLJP/goractor/internal/config"
@@ -179,91 +178,6 @@ func (e *Executor) createCSVFile(result QueryResult, headers []string) (string, 
 	}
 
 	return filename, nil
-}
-
-func extractColumnsFromSQL(sql string) []string {
-	// Normalize SQL but preserve Japanese characters and AS clauses
-	sql = strings.TrimSpace(sql)
-
-	// Handle WITH clause
-	if strings.HasPrefix(strings.ToLower(sql), "with ") {
-		// Find the main SELECT after WITH
-		if mainSelect := strings.LastIndex(strings.ToLower(sql), "select "); mainSelect != -1 {
-			sql = sql[mainSelect:]
-		}
-	}
-
-	// Split by commas when not inside parentheses
-	var columns []string
-	depth := 0
-	start := strings.Index(strings.ToLower(sql), "select") + 6
-	lastComma := start
-
-	for i := start; i < len(sql); i++ {
-		char := sql[i]
-		switch char {
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case ',':
-			if depth == 0 {
-				// Extract column between lastComma and current position
-				col := strings.TrimSpace(sql[lastComma:i])
-				if col != "" {
-					if alias := extractAlias(col); alias != "" {
-						columns = append(columns, alias)
-					} else {
-						columns = append(columns, extractColumnName(col))
-					}
-				}
-				lastComma = i + 1
-			}
-		}
-
-		// Break if we hit FROM clause
-		if depth == 0 && i+5 < len(sql) &&
-			strings.ToLower(sql[i:i+5]) == " from" {
-			// Process the last column before FROM
-			col := strings.TrimSpace(sql[lastComma:i])
-			if col != "" {
-				if alias := extractAlias(col); alias != "" {
-					columns = append(columns, alias)
-				} else {
-					columns = append(columns, extractColumnName(col))
-				}
-			}
-			break
-		}
-	}
-
-	return columns
-}
-
-func extractAlias(column string) string {
-	column = strings.TrimSpace(column)
-	if strings.HasPrefix(column, "(") && strings.HasSuffix(column, ")") {
-		column = strings.TrimPrefix(column, "(")
-		column = strings.TrimSuffix(column, ")")
-	}
-	parts := strings.Split(column, " as ")
-	if len(parts) > 1 {
-		return strings.TrimSpace(parts[len(parts)-1])
-	}
-	return ""
-}
-
-func extractColumnName(column string) string {
-	column = strings.TrimSpace(column)
-	if strings.HasPrefix(column, "(") && strings.HasSuffix(column, ")") {
-		column = strings.TrimPrefix(column, "(")
-		column = strings.TrimSuffix(column, ")")
-	}
-	if strings.Contains(column, ".") {
-		parts := strings.Split(column, ".")
-		return strings.TrimSpace(parts[len(parts)-1])
-	}
-	return column
 }
 
 func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result QueryResult) error {
