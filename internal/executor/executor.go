@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -276,7 +275,7 @@ func (e *Executor) Run(ctx context.Context, t *task.Task) error {
 		return fmt.Errorf("database configuration not found: %s", t.Database)
 	}
 
-	fmt.Println("1. Testing database connection...")
+	fmt.Println("1. database connection...")
 	connStr := "postgres://" + dbConfig.User + ":" + dbConfig.Password + "@" + dbConfig.Host + ":5432/" + dbConfig.DBName
 
 	db, err := sql.Open("postgres", connStr)
@@ -290,7 +289,7 @@ func (e *Executor) Run(ctx context.Context, t *task.Task) error {
 	}
 	fmt.Println("✓ Database connection successful")
 
-	fmt.Println("2. Testing query execution...")
+	fmt.Println("2. query execution...")
 	start := time.Now()
 	rows, err := db.QueryContext(ctx, t.Query)
 	if err != nil {
@@ -314,8 +313,7 @@ func (e *Executor) Run(ctx context.Context, t *task.Task) error {
 	var result []map[string]interface{}
 	count := 0
 
-	// Read first 5 rows for test
-	for rows.Next() && count < 5 {
+	for rows.Next() {
 		// Create a slice of interface{} to hold the values
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
@@ -355,22 +353,15 @@ func (e *Executor) Run(ctx context.Context, t *task.Task) error {
 		Data:          result,
 	}
 
-	fmt.Println("\n3. Testing destination...")
+	fmt.Println("\n3. destination...")
 	// Send test result to destination
 	if t.OutputFormat == "csv" {
 		if err := e.sendResultAsCSV(ctx, t, queryResult); err != nil {
 			return fmt.Errorf("failed to send to destination: %w", err)
 		}
-		fmt.Println("✓ Destination test successful")
+		fmt.Println("✓ Destination successful")
 	} else if t.OutputFormat == "json" {
-		fmt.Println("✓ Destination test successful")
-	}
-
-	// Print sample of the data that would be sent
-	fmt.Println("\nSample data (first row):")
-	if len(result) > 0 {
-		prettyJSON, _ := json.MarshalIndent(result[0], "", "  ")
-		fmt.Println(string(prettyJSON))
+		fmt.Println("✓ Destination successful")
 	}
 
 	return nil
