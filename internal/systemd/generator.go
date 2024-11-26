@@ -78,7 +78,7 @@ func (g *ServiceGenerator) generateServiceFile(t *task.Task) string {
 	currentUser := os.Getenv("USER")
 	homeDir := os.Getenv("HOME")
 	// Get absolute path to the binary
-	binaryPath := filepath.Join(homeDir, "goractor", "goractor")
+	binaryPath := filepath.Join(homeDir, "go", "bin", "goractor")
 
 	return fmt.Sprintf(`[Unit]
 Description=Goractor %s
