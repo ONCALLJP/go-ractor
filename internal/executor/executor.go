@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ONCALLJP/goractor/internal/config"
@@ -204,7 +205,9 @@ func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result Que
 	case "slack":
 		api := slack.New(dest.Token.Value)
 		params := slack.UploadFileV2Parameters{
-			Channel:        dest.Channel,
+			Filename:       filepath.Base(csvFilePath),
+			FileSize:       1000,
+			Channel:        strings.Replace(dest.Channel, "#", "", 1),
 			File:           csvFilePath,
 			Reader:         csvFile,
 			InitialComment: t.Message,
