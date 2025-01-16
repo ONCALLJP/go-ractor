@@ -203,13 +203,13 @@ func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result Que
 	switch dest.Type {
 	case "slack":
 		api := slack.New(dest.Token.Value)
-		params := slack.FileUploadParameters{
-			Channels:       []string{dest.Channel},
+		params := slack.UploadFileV2Parameters{
+			Channel:        dest.Channel,
 			File:           csvFilePath,
 			Reader:         csvFile,
 			InitialComment: t.Message,
 		}
-		_, err = api.UploadFile(params)
+		_, err = api.UploadFileV2(params)
 		if err != nil {
 			return fmt.Errorf("failed to upload file to slack: %w", err)
 		}
