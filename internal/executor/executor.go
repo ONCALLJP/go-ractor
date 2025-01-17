@@ -201,12 +201,18 @@ func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result Que
 	}
 	defer csvFile.Close()
 
+	fileStat, err := csvFile.Stat()
+	if err != nil {
+		panic(err)
+	}
+	size := fileStat.Size()
+
 	switch dest.Type {
 	case "slack":
 		api := slack.New(dest.Token.Value)
 		params := slack.UploadFileV2Parameters{
 			Filename:       filepath.Base(csvFilePath),
-			FileSize:       1000,
+			FileSize:       int(size),
 			Channel:        strings.Replace(dest.Channel, "#", "", 1),
 			File:           csvFilePath,
 			Reader:         csvFile,
