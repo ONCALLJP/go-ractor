@@ -187,6 +187,10 @@ func (e *Executor) sendResultAsCSV(ctx context.Context, t *task.Task, result Que
 		return fmt.Errorf("destination %s not found", t.DestinationName)
 	}
 
+	if len(result.Data) == 0 {
+		return fmt.Errorf("no data to send")
+	}
+
 	// Create CSV file
 	csvFilePath, err := e.createCSVFile(result, t.Columns)
 	if err != nil {
